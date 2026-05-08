@@ -1,0 +1,27 @@
+# anonfm_vsrat_reader colour scheme.
+#
+# Copy this file to one of:
+#   ./anonfm_colors.conf
+#   $XDG_CONFIG_HOME/anonfm/colors.conf
+#   ~/.config/anonfm/colors.conf
+#   %APPDATA%\anonfm\colors.conf
+# Or pass it explicitly with --colors PATH.
+#
+# Lines:
+#   <kind> <nick> <color>
+# kind:   listener | dj
+# nick:   exact match against the JSON field, OR '*' for the category default.
+# color:  xterm-256 colour index 0..255, OR the literal word `hash`
+#         which means "use the built-in deterministic FNV-1a → palette
+#         mapping" (same nick → same colour across runs).
+#
+# Comments start with '#'. Blank lines OK.
+
+# Defaults: deterministic by nick hash.
+listener  *           hash
+dj        *           hash
+
+# Pin specific people to specific colours:
+# dj        Kriesh      226
+# dj        Obsidian    118
+# listener  araaerkb08ba 96
