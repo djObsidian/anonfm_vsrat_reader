@@ -6,8 +6,10 @@
 #include <string.h>
 #include <ctype.h>
 
-/* Built-in fallback palettes (xterm-256 indices). Listener tones go cool,
- * DJ tones go warm, broadly mirroring the reference screenshot. */
+/* Built-in fallback palettes (xterm-256 indices). Listeners stay cool;
+ * DJs span the warm + bright spectrum so two on-air djs are unlikely to
+ * collide. Avoid colours that are also in the listener palette so a DJ
+ * never visually impersonates a listener. */
 static const int afm_listener_palette[] = {
     51, 87, 159, 195,                    /* cyans / pale blues */
     207, 213, 219, 225,                  /* pinks / magentas */
@@ -15,29 +17,46 @@ static const int afm_listener_palette[] = {
     140, 141, 146, 153
 };
 static const int afm_dj_palette[] = {
-    220, 221, 222, 226, 227, 228, 229,   /* yellows */
-    118, 119, 120, 121, 154, 155, 156    /* greens */
+    196, 202, 208, 214,                  /* red → orange */
+    220, 226, 228, 222,                  /* yellow */
+    46,  82,  118, 154, 190,             /* bright greens */
+    119, 156,                            /* pale greens */
+    45,  50,  81,                        /* cyan (distinct from listener) */
+    33,  39,  75,                        /* blue */
+    99,  135, 171, 177,                  /* purple / violet */
+    198, 199, 200, 209                   /* pink / magenta */
 };
 #define AFM_LISTENER_PALETTE_N \
     ((int)(sizeof(afm_listener_palette) / sizeof(afm_listener_palette[0])))
 #define AFM_DJ_PALETTE_N \
     ((int)(sizeof(afm_dj_palette) / sizeof(afm_dj_palette[0])))
 
+/* Sentinel rule values. 0..255 = a concrete xterm-256 index.
+ *   -1  = "off" — do not colour
+ *   -2  = "hash" — pick from the built-in palette by FNV-1a(nick) */
+#define AFM_RULE_OFF  (-1)
+#define AFM_RULE_HASH (-2)
+
 struct afm_color_rule {
     char *nick;       /* NULL means default ('*') */
-    int   color;      /* -2 = "hash", otherwise 0..255 */
+    int   color;      /* AFM_RULE_OFF, AFM_RULE_HASH, or 0..255 */
 };
 
 struct afm_color_table {
     struct afm_color_rule *items;
     size_t                 count;
     size_t                 cap;
-    int                    default_color;  /* -2 = hash */
+    int                    default_color;
 };
 
-static struct afm_color_table g_listeners = { NULL, 0, 0, -2 };
-static struct afm_color_table g_djs       = { NULL, 0, 0, -2 };
-static int                    g_disabled  = 0;
+/* Nick-badge tables default to `hash` (any nick gets a colour). */
+static struct afm_color_table g_listeners      = { NULL, 0, 0, AFM_RULE_HASH };
+static struct afm_color_table g_djs            = { NULL, 0, 0, AFM_RULE_HASH };
+/* Body-text tables default to `off` — bodies are uncoloured unless the
+ * config explicitly opts in. */
+static struct afm_color_table g_listener_text  = { NULL, 0, 0, AFM_RULE_OFF };
+static struct afm_color_table g_dj_text        = { NULL, 0, 0, AFM_RULE_OFF };
+static int                    g_disabled       = 0;
 
 static unsigned long afm_hash_nick(const char *nick)
 {
@@ -93,7 +112,8 @@ static void afm_table_free(struct afm_color_table *t)
 
 static int afm_parse_color_token(const char *tok, int *out)
 {
-    if (strcmp(tok, "hash") == 0) { *out = -2; return 0; }
+    if (strcmp(tok, "hash") == 0) { *out = AFM_RULE_HASH; return 0; }
+    if (strcmp(tok, "off")  == 0) { *out = AFM_RULE_OFF;  return 0; }
     {
         char *endp;
         long  v = strtol(tok, &endp, 10);
@@ -147,6 +167,10 @@ static int afm_parse_line(char *line)
         return afm_table_add(&g_listeners, nick, color);
     } else if (strcmp(kind, "dj") == 0) {
         return afm_table_add(&g_djs, nick, color);
+    } else if (strcmp(kind, "listener_text") == 0) {
+        return afm_table_add(&g_listener_text, nick, color);
+    } else if (strcmp(kind, "dj_text") == 0) {
+        return afm_table_add(&g_dj_text, nick, color);
     }
     return -1;
 }
@@ -184,8 +208,12 @@ void afm_colors_init(const char *explicit_path)
     /* Reset tables in case called twice. */
     afm_table_free(&g_listeners);
     afm_table_free(&g_djs);
-    g_listeners.default_color = -2;
-    g_djs.default_color       = -2;
+    afm_table_free(&g_listener_text);
+    afm_table_free(&g_dj_text);
+    g_listeners.default_color     = AFM_RULE_HASH;
+    g_djs.default_color           = AFM_RULE_HASH;
+    g_listener_text.default_color = AFM_RULE_OFF;
+    g_dj_text.default_color       = AFM_RULE_OFF;
 
     if (explicit_path != NULL) {
         if (afm_load_file(explicit_path) != 0) {
@@ -212,26 +240,48 @@ void afm_colors_disable(void)
     g_disabled = 1;
 }
 
-int afm_color_for_listener(const char *nick)
+int afm_color_globally_enabled(void)
 {
-    int rule;
-    if (g_disabled || nick == NULL) return -1;
-    rule = afm_lookup(&g_listeners, nick);
-    if (rule == -2) {
+    return g_disabled ? 0 : 1;
+}
+
+/* Resolve a rule (-1/-2/0..255) to a concrete xterm-256 index, or -1 if
+ * the rule says "off" or colour is globally disabled. */
+static int afm_resolve(int rule, const char *nick,
+                       const int *palette, int palette_n)
+{
+    if (rule == AFM_RULE_OFF) return -1;
+    if (rule == AFM_RULE_HASH) {
         unsigned long h = afm_hash_nick(nick);
-        return afm_listener_palette[h % (unsigned long)AFM_LISTENER_PALETTE_N];
+        return palette[h % (unsigned long)palette_n];
     }
     return rule;
 }
 
+int afm_color_for_listener(const char *nick)
+{
+    if (g_disabled || nick == NULL) return -1;
+    return afm_resolve(afm_lookup(&g_listeners, nick), nick,
+                       afm_listener_palette, AFM_LISTENER_PALETTE_N);
+}
+
 int afm_color_for_dj(const char *nick)
 {
-    int rule;
     if (g_disabled || nick == NULL) return -1;
-    rule = afm_lookup(&g_djs, nick);
-    if (rule == -2) {
-        unsigned long h = afm_hash_nick(nick);
-        return afm_dj_palette[h % (unsigned long)AFM_DJ_PALETTE_N];
-    }
-    return rule;
+    return afm_resolve(afm_lookup(&g_djs, nick), nick,
+                       afm_dj_palette, AFM_DJ_PALETTE_N);
+}
+
+int afm_color_for_listener_text(const char *nick)
+{
+    if (g_disabled || nick == NULL) return -1;
+    return afm_resolve(afm_lookup(&g_listener_text, nick), nick,
+                       afm_listener_palette, AFM_LISTENER_PALETTE_N);
+}
+
+int afm_color_for_dj_text(const char *nick)
+{
+    if (g_disabled || nick == NULL) return -1;
+    return afm_resolve(afm_lookup(&g_dj_text, nick), nick,
+                       afm_dj_palette, AFM_DJ_PALETTE_N);
 }

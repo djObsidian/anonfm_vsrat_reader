@@ -9,19 +9,30 @@
 #
 # Lines:
 #   <kind> <nick> <color>
-# kind:   listener | dj
+# kind:   listener       — colour of the listener nick badge
+#         dj             — colour of the DJ nick badge
+#         listener_text  — colour of the listener message body text
+#         dj_text        — colour of the DJ response body text
 # nick:   exact match against the JSON field, OR '*' for the category default.
-# color:  xterm-256 colour index 0..255, OR the literal word `hash`
-#         which means "use the built-in deterministic FNV-1a → palette
-#         mapping" (same nick → same colour across runs).
+# color:  xterm-256 colour index 0..255,
+#         OR `hash` — pick from the built-in palette by FNV-1a(nick),
+#         OR `off`  — do not colour (default for *_text).
 #
 # Comments start with '#'. Blank lines OK.
 
-# Defaults: deterministic by nick hash.
-listener  *           hash
-dj        *           hash
+# Nick badges: deterministic by nick hash. (default)
+listener        *  hash
+dj              *  hash
 
-# Pin specific people to specific colours:
+# Body text: uncoloured by default. Uncomment / customise to enable.
+listener_text   *  off
+dj_text         *  off
+# dj_text         *           hash    # paint each DJ's text with their palette colour
+# dj_text         Kriesh      226     # pin specific people:
+# dj_text         Obsidian    118
+# listener_text   araaerkb08ba 96
+
+# Pin specific nick badges:
 # dj        Kriesh      226
 # dj        Obsidian    118
 # listener  araaerkb08ba 96

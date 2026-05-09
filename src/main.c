@@ -20,6 +20,7 @@ struct afm_opts {
     const char *colors_path;
     int         no_color;
     const char *from_file;   /* read JSON from a local file instead of HTTP */
+    const char *socks5;      /* "host:port" or NULL */
 };
 
 static void afm_usage(const char *argv0)
@@ -27,12 +28,15 @@ static void afm_usage(const char *argv0)
     fprintf(stderr,
         "anonfm_vsrat_reader — CLI-кукарекалка для anon.fm\n"
         "Usage: %s [options]\n"
-        "  -w, --watch              poll mode\n"
+        "  -w, --watch              poll mode (default)\n"
+        "  -o, --once               one-shot: print latest batch and exit\n"
         "  -i, --interval SECONDS   poll interval (default 5)\n"
         "  -n, --limit N            show only last N entries\n"
         "  -d, --dj NAME            filter by DJ nick (substring, case-insensitive)\n"
         "  -c, --colors PATH        colour-config file (key/value)\n"
         "      --no-color           disable ANSI colour output\n"
+        "      --socks5 HOST:PORT   route HTTPS through a SOCKS5 proxy\n"
+        "                           (DNS resolved by the proxy too)\n"
         "      --from-file PATH     read JSON from PATH instead of fetching\n"
         "  -h, --help               show this help\n",
         argv0);
@@ -70,13 +74,15 @@ static int afm_str_contains_ci(const char *hay, const char *needle)
 static int afm_parse_args(int argc, char **argv, struct afm_opts *o)
 {
     int i;
-    o->watch        = 0;
+    o->watch        = 1;     /* default: poll mode (so a Windows double-click
+                              *          on the .exe gives a live feed) */
     o->interval_sec = 5;
     o->limit        = -1;
     o->dj_filter    = NULL;
     o->colors_path  = NULL;
     o->no_color     = 0;
     o->from_file    = NULL;
+    o->socks5       = NULL;
 
     for (i = 1; i < argc; ++i) {
         const char *a = argv[i];
@@ -85,6 +91,9 @@ static int afm_parse_args(int argc, char **argv, struct afm_opts *o)
             return 1;
         } else if (afm_str_eq(a, "-w") || afm_str_eq(a, "--watch")) {
             o->watch = 1;
+        } else if (afm_str_eq(a, "-o") || afm_str_eq(a, "--once")
+                   || afm_str_eq(a, "--no-watch")) {
+            o->watch = 0;
         } else if (afm_str_eq(a, "--no-color")) {
             o->no_color = 1;
         } else if ((afm_str_eq(a, "-i") || afm_str_eq(a, "--interval")) && i + 1 < argc) {
@@ -97,6 +106,8 @@ static int afm_parse_args(int argc, char **argv, struct afm_opts *o)
             o->dj_filter = argv[++i];
         } else if ((afm_str_eq(a, "-c") || afm_str_eq(a, "--colors")) && i + 1 < argc) {
             o->colors_path = argv[++i];
+        } else if (afm_str_eq(a, "--socks5") && i + 1 < argc) {
+            o->socks5 = argv[++i];
         } else if (afm_str_eq(a, "--from-file") && i + 1 < argc) {
             o->from_file = argv[++i];
         } else {
@@ -260,6 +271,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "curl_global_init failed\n");
         return 1;
     }
+    if (opts.socks5 != NULL) afm_http_set_socks5(opts.socks5);
 
     if (opts.watch) {
         seen = afm_seen_new();

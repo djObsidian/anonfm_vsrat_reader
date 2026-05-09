@@ -14,7 +14,18 @@ void afm_colors_init(const char *explicit_path);
 int  afm_color_for_listener(const char *nick);
 int  afm_color_for_dj      (const char *nick);
 
-/* Disable colour entirely. After this call both functions return -1. */
+/* Returns an xterm-256 colour index (0..255) to paint the BODY TEXT of the
+ * listener message / DJ response. Returns -1 if the global "no colour"
+ * override is on, OR if the config rule for this nick is `off` (the
+ * default — bodies are uncoloured unless the config explicitly enables
+ * a colour or `hash`). */
+int  afm_color_for_listener_text(const char *nick);
+int  afm_color_for_dj_text      (const char *nick);
+
+/* Disable colour entirely. After this call all the getters above return -1. */
 void afm_colors_disable(void);
+
+/* 1 if colour output is on, 0 if --no-color was passed. */
+int  afm_color_globally_enabled(void);
 
 #endif

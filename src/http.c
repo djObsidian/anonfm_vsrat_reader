@@ -17,6 +17,22 @@ struct afm_buf {
     size_t cap;
 };
 
+static char *g_socks5 = NULL;  /* "host:port" or NULL */
+
+void afm_http_set_socks5(const char *host_port)
+{
+    free(g_socks5);
+    g_socks5 = NULL;
+    if (host_port == NULL || *host_port == '\0') return;
+    {
+        size_t n = strlen(host_port);
+        char  *p = (char *)malloc(n + 1);
+        if (p == NULL) return;
+        memcpy(p, host_port, n + 1);
+        g_socks5 = p;
+    }
+}
+
 static size_t afm_write_cb(void *ptr, size_t size, size_t nmemb, void *user)
 {
     struct afm_buf *b   = (struct afm_buf *)user;
@@ -47,6 +63,8 @@ int afm_http_global_init(void)
 
 void afm_http_global_cleanup(void)
 {
+    free(g_socks5);
+    g_socks5 = NULL;
     curl_global_cleanup();
 }
 
@@ -83,6 +101,10 @@ int afm_http_get(const char *url, char **out_buf, size_t *out_len)
         ca_blob.len   = (size_t)afm_cacert_size;
         ca_blob.flags = CURL_BLOB_NOCOPY;
         curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &ca_blob);
+    }
+    if (g_socks5 != NULL) {
+        curl_easy_setopt(curl, CURLOPT_PROXY,     g_socks5);
+        curl_easy_setopt(curl, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5_HOSTNAME);
     }
 
     rc = curl_easy_perform(curl);
