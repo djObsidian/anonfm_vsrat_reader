@@ -1,7 +1,7 @@
 name: Release
 
 # Triggers:
-#   push of a tag like v1.2.3   -> build all 13 targets, attach as a draft
+#   push of a tag like v1.2.3   -> build all 12 targets, attach as a draft
 #                                  GitHub Release (so a human reviews and
 #                                  hits "Publish")
 #   manual workflow_dispatch    -> build everything, leave artifacts on the
@@ -20,7 +20,7 @@ env:
 
 jobs:
   # =====================================================================
-  # Build: 13-target matrix.
+  # Build: 12-target matrix.
   #
   # Linux: cross-compiled with `zig cc` (one toolchain tarball, all 11
   # archs covered, downloaded from ziglang.org which GH Actions can
@@ -43,12 +43,19 @@ jobs:
           - { name: linux-aarch64, kind: zig, zig_target: aarch64-linux-musl,   ext: '' }
           - { name: linux-armv7,   kind: zig, zig_target: arm-linux-musleabihf, mcpu: cortex_a7,    ext: '' }
           - { name: linux-armv6,   kind: zig, zig_target: arm-linux-musleabihf, mcpu: arm1176jzf_s, ext: '' }
-          - { name: linux-armv5,   kind: zig, zig_target: arm-linux-musleabi,   mcpu: arm926ej_s,   ext: '' }
+          # armv5 dropped: pre-ARMv6 has no LDREX/STREX, so the GCC `__sync_*`
+          # builtins resolve to externs that Linux normally satisfies through
+          # libgcc's kuser_helper shims. Zig's compiler_rt doesn't ship those
+          # shims, so every link of trivial code fails on `__sync_lock_test_and_set_*`.
+          # If you need NSLU2-class hardware: build via musl-cross-make
+          # (toolchain-musl-cross.cmake) on a host with musl.cc reachability.
           - { name: linux-mips,    kind: zig, zig_target: mips-linux-musl,      ext: '' }
           - { name: linux-mipsel,  kind: zig, zig_target: mipsel-linux-musl,    ext: '' }
           - { name: linux-riscv64, kind: zig, zig_target: riscv64-linux-musl,   ext: '' }
           - { name: linux-ppc64le, kind: zig, zig_target: powerpc64le-linux-musl, ext: '' }
-          - { name: linux-s390x,   kind: zig, zig_target: s390x-linux-musl,     ext: '' }
+          # s390x: Zig accepts no "generic" CPU for this arch, so we pin to
+          # z10 — IBM's 2008 baseline that covers everything still in service.
+          - { name: linux-s390x,   kind: zig, zig_target: s390x-linux-musl, mcpu: z10, ext: '' }
           # ---- Windows via mingw-w64 --------------------------------
           - { name: windows-x86_64,    kind: mingw, triple: x86_64-w64-mingw32, ext: '.exe', toolchain: cmake/toolchain-mingw64.cmake }
           - { name: windows-i686-win7, kind: mingw, triple: i686-w64-mingw32,   ext: '.exe', toolchain: cmake/toolchain-mingw32.cmake }
