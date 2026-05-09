@@ -23,10 +23,13 @@
 #
 # Defaults if no rule matches:
 #   badges:  `hash`  (each nick gets a stable palette colour)
-#   bodies:  252     (one consistent soft-grey for ALL bodies — the badge
-#                     identifies who, the body conveys what; matching the
-#                     body to the speaker's badge colour just makes the
-#                     screen noisy without adding info)
+#   bodies:  15      (one consistent BRIGHT WHITE for ALL bodies — the
+#                     badge identifies who, the body conveys what; matching
+#                     the body to the speaker's badge colour just makes the
+#                     screen noisy without adding info; 15 is a direct
+#                     CGA-15 mapping that survives the Win7 downconverter
+#                     unambiguously, unlike grey-208 which sometimes
+#                     blended into the cmd background)
 # Set `*_text  *  off` if you want naked monochrome bodies, or pick any
 # xterm-256 index / `hash` to opt back into per-nick body colouring.
 #
@@ -38,8 +41,8 @@
 listener        *  hash
 dj              *  hash
 
-listener_text   *  252       # one stable colour for all listener bodies
-dj_text         *  252       # ditto for DJs — keep the eye anchored
+listener_text   *  15        # bright white — max contrast on any default bg
+dj_text         *  15        # ditto for DJs — keep the eye anchored
 # listener_text *  hash      # opt-in: each listener's body in their badge colour
 # listener_text *  off       # opt-in: monochrome bodies
 

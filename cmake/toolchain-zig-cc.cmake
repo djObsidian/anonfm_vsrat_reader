@@ -60,4 +60,11 @@ set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 # Static link via clang/lld driver (zig cc); same flag as gcc.
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-static")
+# Add -ffunction-sections / -fdata-sections + --gc-sections so the
+# linker drops every libcurl / wolfSSL routine we don't actually call
+# (we only do an /answers.js GET — not the entire SSL stack reaches
+# the final binary). Without these, zig binaries balloon to ~10 MB
+# vs ~2.5 MB stripped + gc'd.
+set(CMAKE_C_FLAGS_INIT          "-ffunction-sections -fdata-sections")
+set(CMAKE_CXX_FLAGS_INIT        "-ffunction-sections -fdata-sections")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-static -Wl,--gc-sections")

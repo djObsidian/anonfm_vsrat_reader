@@ -51,10 +51,15 @@ static const int afm_dj_palette[] = {
 #define AFM_RULE_OFF  (-1)
 #define AFM_RULE_HASH (-2)
 
-/* Default body-text colour (xterm-256). Picked OUTSIDE both badge palettes
- * so a body never accidentally matches the speaker's badge — keeps the
- * "badge identifies who, body conveys what" split visually consistent. */
-#define AFM_BODY_DEFAULT 252  /* soft light grey, easy on eyes */
+/* Default body-text colour. Was 252 (soft grey 208/208/208) but on Win7
+ * cmd.exe with our SetConsoleTextAttribute fallback, 252 downconverts
+ * to CGA-7 LIGHTGRAY which on some Win7 setups (custom default attrs,
+ * raster fonts) becomes nearly indistinguishable from background — body
+ * text effectively invisible. xterm 15 is a direct CGA-15 (BRIGHT WHITE)
+ * mapping with zero downconvert ambiguity, plenty of contrast on every
+ * default cmd / terminal background. Still consistent across all bodies
+ * (the "badge says who, body says what" split holds). */
+#define AFM_BODY_DEFAULT 15
 
 struct afm_color_rule {
     char *nick;       /* NULL means default ('*') */

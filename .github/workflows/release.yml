@@ -160,15 +160,14 @@ jobs:
           mkdir -p dist
           # Strip with whatever knows the target ABI:
           # - mingw: triple-prefixed strip from binutils
-          # - zig:   llvm-strip (handles every arch llvm knows; ships
-          #          with the toolchain). Fall back to host strip if
-          #          neither is around — losing strip is OK.
+          # - zig:   `zig objcopy --strip-all` — bundled with the Zig
+          #          toolchain, knows every arch llvm supports. Cuts a
+          #          fresh zig-cc binary from ~10 MB to ~2 MB.
           if [ "${{ matrix.kind }}" = "mingw" ]; then
             "${{ matrix.triple }}-strip" "$BIN" || true
           else
-            llvm-strip "$BIN" 2>/dev/null \
-              || /opt/zig/lib/zig*/llvm-strip "$BIN" 2>/dev/null \
-              || strip "$BIN" 2>/dev/null \
+            zig objcopy --strip-all --strip-debug "$BIN" "$BIN.stripped" \
+              && mv "$BIN.stripped" "$BIN" \
               || true
           fi
           cp "$BIN" "dist/$OUT"
