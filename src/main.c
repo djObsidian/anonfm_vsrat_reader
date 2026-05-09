@@ -10,7 +10,17 @@
 #include <string.h>
 #include <ctype.h>
 
-#define AFM_ANSWERS_URL "https://anon.fm/answers.js"
+/* Default URL pool. The first one that responds 2xx wins; we try the next
+ * on any error so adding mirrors is just appending to this list (or
+ * passing more --from-url on the command line). */
+static const char *AFM_DEFAULT_URLS[] = {
+    "https://anon.fm/answers.js"
+    /* add more public mirrors here once they exist */
+};
+#define AFM_DEFAULT_URLS_N \
+    ((int)(sizeof(AFM_DEFAULT_URLS) / sizeof(AFM_DEFAULT_URLS[0])))
+
+#define AFM_MAX_URLS 16
 
 struct afm_opts {
     int         watch;
@@ -21,6 +31,8 @@ struct afm_opts {
     int         no_color;
     const char *from_file;   /* read JSON from a local file instead of HTTP */
     const char *socks5;      /* "host:port" or NULL */
+    const char *urls[AFM_MAX_URLS];   /* mirrors to try in order */
+    int         urls_n;
 };
 
 static void afm_usage(const char *argv0)
@@ -38,6 +50,9 @@ static void afm_usage(const char *argv0)
         "      --socks5 HOST:PORT   route HTTPS through a SOCKS5 proxy\n"
         "                           (DNS resolved by the proxy too)\n"
         "      --from-file PATH     read JSON from PATH instead of fetching\n"
+        "      --from-url URL       fetch from URL (overrides default; may be\n"
+        "                           passed multiple times — tried in order,\n"
+        "                           first 2xx wins, the rest are mirrors)\n"
         "  -h, --help               show this help\n",
         argv0);
 }
@@ -83,6 +98,7 @@ static int afm_parse_args(int argc, char **argv, struct afm_opts *o)
     o->no_color     = 0;
     o->from_file    = NULL;
     o->socks5       = NULL;
+    o->urls_n       = 0;
 
     for (i = 1; i < argc; ++i) {
         const char *a = argv[i];
@@ -110,6 +126,12 @@ static int afm_parse_args(int argc, char **argv, struct afm_opts *o)
             o->socks5 = argv[++i];
         } else if (afm_str_eq(a, "--from-file") && i + 1 < argc) {
             o->from_file = argv[++i];
+        } else if (afm_str_eq(a, "--from-url") && i + 1 < argc) {
+            if (o->urls_n >= AFM_MAX_URLS) {
+                fprintf(stderr, "too many --from-url (max %d)\n", AFM_MAX_URLS);
+                return -1;
+            }
+            o->urls[o->urls_n++] = argv[++i];
         } else {
             fprintf(stderr, "unknown option: %s\n", a);
             afm_usage(argv[0]);
@@ -240,7 +262,24 @@ static int afm_fetch_and_render(const struct afm_opts *o,
             return -1;
         }
     } else {
-        if (afm_http_get(AFM_ANSWERS_URL, &body, &body_len) != 0) return -1;
+        const char *const *urls;
+        int                urls_n;
+        int                k;
+        int                got = 0;
+        if (o->urls_n > 0) {
+            urls   = o->urls;
+            urls_n = o->urls_n;
+        } else {
+            urls   = AFM_DEFAULT_URLS;
+            urls_n = AFM_DEFAULT_URLS_N;
+        }
+        for (k = 0; k < urls_n; ++k) {
+            if (afm_http_get(urls[k], &body, &body_len) == 0) { got = 1; break; }
+            if (k + 1 < urls_n) {
+                fprintf(stderr, "http: trying mirror %s\n", urls[k + 1]);
+            }
+        }
+        if (!got) return -1;
     }
     if (afm_parse_answers(body, body_len, &entries, &count) != 0) {
         free(body);
@@ -249,7 +288,7 @@ static int afm_fetch_and_render(const struct afm_opts *o,
     afm_render_batch(entries, count, o, seen, print_separators);
     afm_entries_free(entries, count);
     free(body);
-    fflush(stdout);
+    afm_console_flush();
     return 0;
 }
 

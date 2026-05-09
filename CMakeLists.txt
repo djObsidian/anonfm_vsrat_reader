@@ -62,6 +62,24 @@ set(CURL_USE_OPENSSL   OFF CACHE BOOL "" FORCE)
 set(CURL_USE_LIBSSH2   OFF CACHE BOOL "" FORCE)
 set(CURL_USE_WOLFSSL   ON  CACHE BOOL "" FORCE)
 set(CURL_WOLFSSL       ON  CACHE BOOL "" FORCE)
+# Turn off every optional curl dep that auto-detects from the host. When
+# cross-compiling with a musl-cross toolchain whose sysroot lacks idn2 /
+# zlib / psl / etc, libcurl's CMake "helpfully" finds the BUILD HOST's
+# copies in /usr/include, drags `-isystem /usr/include` into the flags,
+# and the cross compile dies inside <features-time64.h>. We don't need
+# any of these for an /answers.js GET — kill them with fire.
+set(CURL_USE_LIBIDN2   OFF CACHE BOOL "" FORCE)
+set(CURL_USE_LIBPSL    OFF CACHE BOOL "" FORCE)
+set(CURL_ZLIB          OFF CACHE STRING "" FORCE)
+set(CURL_BROTLI        OFF CACHE BOOL "" FORCE)
+set(CURL_ZSTD          OFF CACHE BOOL "" FORCE)
+set(USE_NGHTTP2        OFF CACHE BOOL "" FORCE)
+set(USE_LIBRTMP        OFF CACHE BOOL "" FORCE)
+set(USE_NGTCP2         OFF CACHE BOOL "" FORCE)
+set(USE_QUICHE         OFF CACHE BOOL "" FORCE)
+set(USE_OPENLDAP       OFF CACHE BOOL "" FORCE)
+set(ENABLE_UNIX_SOCKETS ON CACHE BOOL "" FORCE)
+set(CURL_USE_PKGCONFIG OFF CACHE BOOL "" FORCE)
 # Point libcurl at the FetchContent'd wolfSSL build/install
 set(WolfSSL_INCLUDE_DIR "${wolfssl_SOURCE_DIR}" CACHE PATH "" FORCE)
 set(WolfSSL_LIBRARY     wolfssl                CACHE STRING "" FORCE)

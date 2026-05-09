@@ -1,38 +1,72 @@
 # anonfm_vsrat_reader colour scheme.
 #
-# Copy this file to one of:
+# Copy this file to one of (the reader picks the first one that exists):
 #   ./anonfm_colors.conf
 #   $XDG_CONFIG_HOME/anonfm/colors.conf
 #   ~/.config/anonfm/colors.conf
-#   %APPDATA%\anonfm\colors.conf
+#   %APPDATA%\anonfm\colors.conf            (Windows)
 # Or pass it explicitly with --colors PATH.
 #
-# Lines:
+# Format:
 #   <kind> <nick> <color>
-# kind:   listener       — colour of the listener nick badge
-#         dj             — colour of the DJ nick badge
-#         listener_text  — colour of the listener message body text
-#         dj_text        — colour of the DJ response body text
-# nick:   exact match against the JSON field, OR '*' for the category default.
-# color:  xterm-256 colour index 0..255,
-#         OR `hash` — pick from the built-in palette by FNV-1a(nick),
-#         OR `off`  — do not colour (default for *_text).
+#
+# kind:    listener       — colour of the listener nick badge
+#          dj             — colour of the DJ nick badge
+#          listener_text  — colour of the listener message body
+#          dj_text        — colour of the DJ response body
+#
+# nick:    exact match against the JSON field, OR '*' for the category default.
+#
+# color:   xterm-256 colour index 0..255,
+#          OR `hash` — pick from the built-in palette by FNV-1a(nick),
+#          OR `off`  — do not colour.
+#
+# Defaults if no rule matches:
+#   badges:  `hash`  (each nick gets a stable palette colour)
+#   bodies:  252     (one consistent soft-grey for ALL bodies — the badge
+#                     identifies who, the body conveys what; matching the
+#                     body to the speaker's badge colour just makes the
+#                     screen noisy without adding info)
+# Set `*_text  *  off` if you want naked monochrome bodies, or pick any
+# xterm-256 index / `hash` to opt back into per-nick body colouring.
 #
 # Comments start with '#'. Blank lines OK.
 
-# Nick badges: deterministic by nick hash. (default)
+# ---------------------------------------------------------------------------
+# Category defaults
+# ---------------------------------------------------------------------------
 listener        *  hash
 dj              *  hash
 
-# Body text: uncoloured by default. Uncomment / customise to enable.
-listener_text   *  off
-dj_text         *  off
-# dj_text         *           hash    # paint each DJ's text with their palette colour
-# dj_text         Kriesh      226     # pin specific people:
-# dj_text         Obsidian    118
-# listener_text   araaerkb08ba 96
+listener_text   *  252       # one stable colour for all listener bodies
+dj_text         *  252       # ditto for DJs — keep the eye anchored
+# listener_text *  hash      # opt-in: each listener's body in their badge colour
+# listener_text *  off       # opt-in: monochrome bodies
 
-# Pin specific nick badges:
-# dj        Kriesh      226
-# dj        Obsidian    118
-# listener  araaerkb08ba 96
+# ---------------------------------------------------------------------------
+# DJ roster — pin specific colours so they stay constant across machines
+# ---------------------------------------------------------------------------
+# We have ~1.5 active DJs at any given moment. The DJ palette is small
+# on purpose (3 cycle colours), so pinning here is more about taste than
+# collision-avoidance.
+#
+# Uncomment / edit to taste. Standard recognisable assignments:
+#
+# dj            Kriesh        226    # bright yellow
+# dj            Obsidian      118    # bright green
+# dj            <kто-там-ещё> 214    # orange — third seat when manned
+#
+# dj_text       Kriesh        226    # match body to badge for full presence
+# dj_text       Obsidian      118
+
+# ---------------------------------------------------------------------------
+# Listener regulars — pin nicks of frequent flyers
+# ---------------------------------------------------------------------------
+# This is just a hint list. Add your own usual suspects here so the
+# colour stays the same even if the hash palette is tweaked later.
+#
+# listener      araaerkb08ba    96
+# listener      <regular_nick>  117
+# listener      <another_one>   207
+#
+# listener_text araaerkb08ba    96   # mirror the badge colour into the body

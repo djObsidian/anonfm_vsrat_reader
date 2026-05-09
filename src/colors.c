@@ -6,25 +6,39 @@
 #include <string.h>
 #include <ctype.h>
 
-/* Built-in fallback palettes (xterm-256 indices). Listeners stay cool;
- * DJs span the warm + bright spectrum so two on-air djs are unlikely to
- * collide. Avoid colours that are also in the listener palette so a DJ
- * never visually impersonates a listener. */
+/* Built-in fallback palettes (xterm-256 indices). The audience is tens of
+ * unique listeners vs. a permanent roster of ~1.5 djs, so the listener
+ * palette is wide (lots of distinct colours, low collision rate) and the
+ * dj palette is intentionally tiny — DJs are recognised by who's on air,
+ * not by which exact shade of yellow we picked for them.
+ *
+ * Palettes do not overlap, so a DJ can never visually impersonate a
+ * listener and vice versa. */
 static const int afm_listener_palette[] = {
-    51, 87, 159, 195,                    /* cyans / pale blues */
-    207, 213, 219, 225,                  /* pinks / magentas */
-    105, 111, 117, 123,                  /* purpleish */
-    140, 141, 146, 153
+    /* cyans / teal */
+    45,  50,  51,  80,  81,  87,
+    /* blues */
+    33,  39,  75,  111, 117, 123,
+    /* purples / violet */
+    99,  105, 135, 141, 147, 171, 177, 183,
+    /* pinks / magentas */
+    198, 199, 200, 207, 213, 219, 225,
+    /* greens (cool side) */
+    46,  82,  118, 119, 156,
+    /* warm side: red / orange */
+    196, 202, 208, 209,
+    /* yellows / olive */
+    190, 220, 228,
+    /* misc pastel */
+    140, 146, 153, 159, 195
 };
+/* DJ palette: deliberately small. The roster IS small. Picking from a
+ * tight set means each DJ keeps a recognisable colour and there is no
+ * "wait, which shade was Obsidian again?" moment. */
 static const int afm_dj_palette[] = {
-    196, 202, 208, 214,                  /* red → orange */
-    220, 226, 228, 222,                  /* yellow */
-    46,  82,  118, 154, 190,             /* bright greens */
-    119, 156,                            /* pale greens */
-    45,  50,  81,                        /* cyan (distinct from listener) */
-    33,  39,  75,                        /* blue */
-    99,  135, 171, 177,                  /* purple / violet */
-    198, 199, 200, 209                   /* pink / magenta */
+    226,    /* bright yellow — Kriesh historically */
+    118,    /* bright green  — Obsidian historically */
+    214     /* orange        — third seat, when manned */
 };
 #define AFM_LISTENER_PALETTE_N \
     ((int)(sizeof(afm_listener_palette) / sizeof(afm_listener_palette[0])))
@@ -36,6 +50,11 @@ static const int afm_dj_palette[] = {
  *   -2  = "hash" — pick from the built-in palette by FNV-1a(nick) */
 #define AFM_RULE_OFF  (-1)
 #define AFM_RULE_HASH (-2)
+
+/* Default body-text colour (xterm-256). Picked OUTSIDE both badge palettes
+ * so a body never accidentally matches the speaker's badge — keeps the
+ * "badge identifies who, body conveys what" split visually consistent. */
+#define AFM_BODY_DEFAULT 252  /* soft light grey, easy on eyes */
 
 struct afm_color_rule {
     char *nick;       /* NULL means default ('*') */
@@ -52,10 +71,13 @@ struct afm_color_table {
 /* Nick-badge tables default to `hash` (any nick gets a colour). */
 static struct afm_color_table g_listeners      = { NULL, 0, 0, AFM_RULE_HASH };
 static struct afm_color_table g_djs            = { NULL, 0, 0, AFM_RULE_HASH };
-/* Body-text tables default to `off` — bodies are uncoloured unless the
- * config explicitly opts in. */
-static struct afm_color_table g_listener_text  = { NULL, 0, 0, AFM_RULE_OFF };
-static struct afm_color_table g_dj_text        = { NULL, 0, 0, AFM_RULE_OFF };
+/* Body-text tables default to a SINGLE consistent colour (not `hash`):
+ * the body of every message is the main thing we read, and a stable
+ * neutral colour is more comfortable than per-speaker colour cycling.
+ * The badge already says who's speaking; the body says what — keeping
+ * its colour stable lets the eye flow without re-tuning per stanza. */
+static struct afm_color_table g_listener_text  = { NULL, 0, 0, AFM_BODY_DEFAULT };
+static struct afm_color_table g_dj_text        = { NULL, 0, 0, AFM_BODY_DEFAULT };
 static int                    g_disabled       = 0;
 
 static unsigned long afm_hash_nick(const char *nick)
@@ -212,8 +234,8 @@ void afm_colors_init(const char *explicit_path)
     afm_table_free(&g_dj_text);
     g_listeners.default_color     = AFM_RULE_HASH;
     g_djs.default_color           = AFM_RULE_HASH;
-    g_listener_text.default_color = AFM_RULE_OFF;
-    g_dj_text.default_color       = AFM_RULE_OFF;
+    g_listener_text.default_color = AFM_BODY_DEFAULT;
+    g_dj_text.default_color       = AFM_BODY_DEFAULT;
 
     if (explicit_path != NULL) {
         if (afm_load_file(explicit_path) != 0) {
