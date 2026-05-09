@@ -12,7 +12,7 @@
 - с watch-режимом и фильтром по диджею
 - одним самодостаточным бинарём (CA Mozilla вшит, рядом ничего не нужно)
 
-![reference](reference.png)
+![UI](image_powershell.png)
 
 ## Эндпоинт
 
