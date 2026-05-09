@@ -87,10 +87,10 @@ cmake --build build-win -j20
 CMake умеет MSVC из коробки — теоретически собирается так же. Не пробовал.
 Если что-то не так — мне поебать, кидай PR.
 
-### Кросс под Windows XP / 7 (i686)
+### Кросс под 32-битный Windows 7 (i686)
 
-Для XP и 32-битного Win7 нужен отдельный мьюзловый (тьфу, мингвовый)
-тулчейн `i686-w64-mingw32-gcc`. Под убунту:
+Для 32-битного Win7 нужен отдельный мингвовый тулчейн
+`i686-w64-mingw32-gcc`. Под убунту:
 
 ```bash
 sudo apt install mingw-w64
@@ -99,25 +99,77 @@ cmake -S . -B build-win32 -DCMAKE_BUILD_TYPE=Release \
 cmake --build build-win32 -j20
 ```
 
-Это даёт PE32 (i386) бинарь с `SUBSYSTEM=5.01`, который ОК запускается
-на XP / Server 2003 / Vista / 7 / 8 / 10 / 11. UTF-8 включается через
-`SetConsoleOutputCP(CP_UTF8)` (в XP уже есть). Цвета через старое
-WinAPI `SetConsoleTextAttribute` — ANSI escape-секвенции на досемёрке
-не парсятся cmd.exe'м, поэтому ридер автоматически переключается на
-WinAPI-режим, downconvert'ит xterm-256 → ближайший из 16 CGA-цветов.
+Это даёт PE32 (i386) бинарь с `SUBSYSTEM=6.01`, который запускается
+на Win7 / Server 2008 R2 / 8 / 8.1 / 10 / 11 (и на 32-битном, и на
+64-битном). UTF-8 рендерится через `MultiByteToWideChar` +
+`WriteConsoleW` — codepage cmd.exe не важен. Цвета: на Win10+ через
+ANSI escape (Virtual Terminal Processing), на Win7 автоматический
+fallback на `SetConsoleTextAttribute` (xterm-256 → ближайший из 16
+CGA-цветов).
 
-Емодзи на Win7 — это лотерея: codepage 65001 включается, но в
-дефолтном «Consolas»/«Lucida Console» не нарисуются астральные
-плоскости Юникода. Текст продолжит литься, эмодзи отрисуются
-квадратиками — никаких падений. Чтоб настоящие эмодзи под старой
-шиндой — поставьте Windows Terminal (он работает на Win10+).
+**XP не поддерживается**: пробовали — wolfSSL хардкодит вызов
+`InetPton`, который появился в `ws2_32.dll` только начиная с Vista.
+Чтоб собрать под XP, надо патчить wolfSSL (заменить `InetPton` на
+`inet_addr` с потерей IPv6) — это уже отдельный проект, не наш.
+
+Емодзи на Win7 — лотерея: `WriteConsoleW` доставит правильные
+кодепойнты до cmd.exe, но дефолтные «Consolas» / «Lucida Console» не
+нарисуют астральные плоскости Юникода. Текст продолжит литься,
+эмодзи отрисуются квадратиками — никаких падений. Чтоб настоящие
+эмодзи под старой шиндой — Windows Terminal (Win10+).
 
 ### Кросс на ARM / MIPS / RISC-V / итд (musl-static)
 
-Скачайте готовый musl-cross тулчейн с https://musl.cc для нужного
-тройника, распакуйте, добавьте в `PATH`, потом:
+Два пути.
+
+**Путь №1 — через Zig** (используется в нашем GitHub Actions):
 
 ```bash
+# 1) скачать zig (один тарбол, ~75 MB, покрывает все архи сразу)
+curl -fsSL -o zig.tar.xz \
+     https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+tar xf zig.tar.xz && sudo mv zig-linux-x86_64-0.13.0 /opt/zig
+
+# 2) маленький шим, чтобы CMake видел один cc/cxx/ar/ranlib
+mkdir -p /tmp/zig-shim
+cat > /tmp/zig-shim/cc <<'EOF'
+#!/bin/sh
+exec /opt/zig/zig cc -target aarch64-linux-musl "$@"
+EOF
+cat > /tmp/zig-shim/cxx     <<'EOF'
+#!/bin/sh
+exec /opt/zig/zig c++ -target aarch64-linux-musl "$@"
+EOF
+cat > /tmp/zig-shim/ar      <<'EOF'
+#!/bin/sh
+exec /opt/zig/zig ar "$@"
+EOF
+cat > /tmp/zig-shim/ranlib  <<'EOF'
+#!/bin/sh
+exec /opt/zig/zig ranlib "$@"
+EOF
+chmod +x /tmp/zig-shim/*
+
+# 3) собрать
+export CC=/tmp/zig-shim/cc CXX=/tmp/zig-shim/cxx
+export AR=/tmp/zig-shim/ar RANLIB=/tmp/zig-shim/ranlib
+export AFM_ZIG_TARGET=aarch64-linux-musl
+cmake -S . -B build-aarch64 -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-zig-cc.cmake
+cmake --build build-aarch64 -j20
+```
+
+Меняй `aarch64-linux-musl` на любой Zig-таргет: `x86-linux-musl`,
+`arm-linux-musleabihf` (`-mcpu=cortex_a7`/`arm1176jzf_s`),
+`arm-linux-musleabi` (`-mcpu=arm926ej_s`), `mips-linux-musl`,
+`mipsel-linux-musl`, `riscv64-linux-musl`, `powerpc64le-linux-musl`,
+`s390x-linux-musl`, и т.д.
+
+**Путь №2 — через классический musl-cross-make** (если интернет
+не блокирует musl.cc):
+
+```bash
+# скачать с https://musl.cc, распаковать в ~/cross
 export PATH=~/cross/aarch64-linux-musl-cross/bin:$PATH
 export AFM_MUSL_TARGET=aarch64-linux-musl
 cmake -S . -B build-aarch64 -DCMAKE_BUILD_TYPE=Release \
@@ -125,31 +177,24 @@ cmake -S . -B build-aarch64 -DCMAKE_BUILD_TYPE=Release \
 cmake --build build-aarch64 -j20
 ```
 
-Меняйте `AFM_MUSL_TARGET=` на нужный тройник (`aarch64-linux-musl`,
-`armv5l-linux-musleabi`, `armv7l-linux-musleabihf`, `mips-linux-musl`,
-`mipsel-linux-musl`, `riscv64-linux-musl`, `powerpc64le-linux-musl`,
-`s390x-linux-musl`, и т.д. — всё что мьюзл-кросс шипит). Получаются
-полностью статические PIE ELF-ки без зависимостей — суём на железку
-по `scp`, запускаем.
+В обоих случаях получаются полностью статические ELF-ки без
+зависимостей — суём на железку по `scp`, запускаем.
 
 **Подводный камень**: libcurl по дефолту автодетектит на хосте libidn2,
 zlib, libpsl, и тащит из `/usr/include` и `/usr/lib` в кросс-сборку,
 где это всё, ясное дело, не той архитектуры. Мы это убили в
 [`CMakeLists.txt`](CMakeLists.txt) (`CURL_USE_LIBIDN2=OFF`, `CURL_ZLIB=OFF`,
-`USE_NGHTTP2=OFF`, ...) и в [`cmake/toolchain-musl-cross.cmake`](cmake/toolchain-musl-cross.cmake)
-(`CMAKE_SYSROOT` + `CMAKE_FIND_ROOT_PATH` указывают на сысрут тулчейна).
-HTTP/2 поэтому отключён — `/answers.js` и без него отлично качается.
+`USE_NGHTTP2=OFF`, ...) и в обоих тулчейн-файлах (через
+`CMAKE_SYSROOT` + `CMAKE_FIND_ROOT_PATH`). HTTP/2 поэтому отключён —
+`/answers.js` и без него отлично качается.
 
-**Проверено на этой машине**:
-- `linux-x86_64` (gcc 13, glibc) — собирается, работает
-- `linux-aarch64` (musl 1.2, gcc 11.2.1) — собирается, бинарь корректный
-  ARM64 static-pie ELF; протестировать в эмуляторе не пробовали
-- `linux-mips` (musl 1.2, gcc 11.2.1) — собирается, бинарь корректный
-  MIPS-I big-endian static-pie ELF
-- `windows-x86_64` (mingw-w64 GCC 12.0) — собирается, .exe работает на Win10+
+**Проверено локально (через zig cc)**:
+- `aarch64-linux-musl` — ✓ ARM64 static ELF
+- `mips-linux-musl` — ✓ MIPS32 BE static ELF
 
-**Не проверено**: `armv5/armv7/riscv64/s390x/...` — тулчейн-файл их умеет
-по той же схеме, должно собираться, но локально не пробовали.
+**Проверено через CI (см. [`.github/workflows/release.yml`](.github/workflows/release.yml))**:
+все 13 таргетов из релиз-матрицы. На push тега `v*` собирается draft
+GitHub Release со всеми бинарями — заходи в Releases и нажимай Publish.
 
 ### Сборка под всё сразу
 

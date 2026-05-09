@@ -15,9 +15,18 @@ on:
 permissions:
   contents: write   # needed by the release job to create the draft
 
+env:
+  ZIG_VERSION: 0.13.0   # bump together with the cache key below
+
 jobs:
   # =====================================================================
-  # Build: 13-target matrix, all cross-compiled from a single Ubuntu host.
+  # Build: 13-target matrix.
+  #
+  # Linux: cross-compiled with `zig cc` (one toolchain tarball, all 11
+  # archs covered, downloaded from ziglang.org which GH Actions can
+  # reach — unlike musl.cc).
+  #
+  # Windows: cross-compiled with mingw-w64 from the Ubuntu apt repo.
   # =====================================================================
   build:
     name: ${{ matrix.name }}
@@ -26,21 +35,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ---- Linux musl-static (uname-style names; what the user sees) ----
-          - { name: linux-x86_64,    kind: musl,  triple: x86_64-linux-musl,       ext: '' }
-          - { name: linux-i686,      kind: musl,  triple: i686-linux-musl,         ext: '' }
-          - { name: linux-aarch64,   kind: musl,  triple: aarch64-linux-musl,      ext: '' }
-          - { name: linux-armv7l,    kind: musl,  triple: armv7l-linux-musleabihf, ext: '' }
-          - { name: linux-armv6,     kind: musl,  triple: armv6-linux-musleabihf,  ext: '' }
-          - { name: linux-armv5l,    kind: musl,  triple: armv5l-linux-musleabi,   ext: '' }
-          - { name: linux-mips,      kind: musl,  triple: mips-linux-musl,         ext: '' }
-          - { name: linux-mipsel,    kind: musl,  triple: mipsel-linux-musl,       ext: '' }
-          - { name: linux-riscv64,   kind: musl,  triple: riscv64-linux-musl,      ext: '' }
-          - { name: linux-ppc64le,   kind: musl,  triple: powerpc64le-linux-musl,  ext: '' }
-          - { name: linux-s390x,     kind: musl,  triple: s390x-linux-musl,        ext: '' }
-          # ---- Windows mingw ----
+          # ---- Linux via zig cc (musl-static) -----------------------
+          # zig_target uses Zig's LLVM-style triple (e.g. "x86" not
+          # "i686", "arm" not "armv7l"); mcpu refines the ARM variant.
+          - { name: linux-x86_64,  kind: zig, zig_target: x86_64-linux-musl,    ext: '' }
+          - { name: linux-i686,    kind: zig, zig_target: x86-linux-musl,       ext: '' }
+          - { name: linux-aarch64, kind: zig, zig_target: aarch64-linux-musl,   ext: '' }
+          - { name: linux-armv7,   kind: zig, zig_target: arm-linux-musleabihf, mcpu: cortex_a7,    ext: '' }
+          - { name: linux-armv6,   kind: zig, zig_target: arm-linux-musleabihf, mcpu: arm1176jzf_s, ext: '' }
+          - { name: linux-armv5,   kind: zig, zig_target: arm-linux-musleabi,   mcpu: arm926ej_s,   ext: '' }
+          - { name: linux-mips,    kind: zig, zig_target: mips-linux-musl,      ext: '' }
+          - { name: linux-mipsel,  kind: zig, zig_target: mipsel-linux-musl,    ext: '' }
+          - { name: linux-riscv64, kind: zig, zig_target: riscv64-linux-musl,   ext: '' }
+          - { name: linux-ppc64le, kind: zig, zig_target: powerpc64le-linux-musl, ext: '' }
+          - { name: linux-s390x,   kind: zig, zig_target: s390x-linux-musl,     ext: '' }
+          # ---- Windows via mingw-w64 --------------------------------
           - { name: windows-x86_64,    kind: mingw, triple: x86_64-w64-mingw32, ext: '.exe', toolchain: cmake/toolchain-mingw64.cmake }
-          - { name: windows-i686-xp,   kind: mingw, triple: i686-w64-mingw32,   ext: '.exe', toolchain: cmake/toolchain-mingw32.cmake }
+          - { name: windows-i686-win7, kind: mingw, triple: i686-w64-mingw32,   ext: '.exe', toolchain: cmake/toolchain-mingw32.cmake }
 
     steps:
       - uses: actions/checkout@v4
@@ -48,50 +59,84 @@ jobs:
       - name: Install host build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build file
+          sudo apt-get install -y --no-install-recommends cmake file xz-utils
 
-      # mingw-w64 host package provides BOTH x86_64-w64-mingw32-* and
-      # i686-w64-mingw32-* binaries, so it covers both Windows targets.
       - name: Install mingw-w64
         if: matrix.kind == 'mingw'
         run: sudo apt-get install -y --no-install-recommends mingw-w64
 
-      # musl-cross toolchain bundles from musl.cc are ~100-150 MB.
-      # Cache by target triple so we download once per (target, cache-version).
-      # Bump the v1 suffix to invalidate every cache.
-      - name: Cache musl-cross toolchain
-        if: matrix.kind == 'musl'
-        id: cache-musl
+      # Cache the Zig tarball so 11 parallel matrix legs only download
+      # once. Bump ZIG_VERSION above + the suffix below to invalidate.
+      - name: Cache Zig
+        if: matrix.kind == 'zig'
+        id: cache-zig
         uses: actions/cache@v4
         with:
-          path: ~/cross/${{ matrix.triple }}-cross
-          key: musl-cross-${{ matrix.triple }}-v1
+          path: /opt/zig
+          key: zig-${{ env.ZIG_VERSION }}-linux-x86_64-v1
 
-      - name: Download musl-cross toolchain
-        if: matrix.kind == 'musl' && steps.cache-musl.outputs.cache-hit != 'true'
+      - name: Install Zig
+        if: matrix.kind == 'zig' && steps.cache-zig.outputs.cache-hit != 'true'
         run: |
-          mkdir -p ~/cross
-          cd ~/cross
-          curl -fsSL -o tc.tgz "https://musl.cc/${{ matrix.triple }}-cross.tgz"
-          tar xf tc.tgz
-          rm tc.tgz
+          cd /tmp
+          curl -fsSL --retry 3 --connect-timeout 30 \
+               -o zig.tar.xz \
+               "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf zig.tar.xz
+          sudo mv "zig-linux-x86_64-${ZIG_VERSION}" /opt/zig
+          rm zig.tar.xz
 
-      - name: Add musl-cross to PATH
-        if: matrix.kind == 'musl'
-        run: echo "$HOME/cross/${{ matrix.triple }}-cross/bin" >> $GITHUB_PATH
+      - name: Add Zig to PATH
+        if: matrix.kind == 'zig'
+        run: echo "/opt/zig" >> $GITHUB_PATH
+
+      # Per-target shim scripts that pin the cross-target (and -mcpu for
+      # the ARM variants) into a plain-named cc/cxx/ar/ranlib that CMake
+      # finds via the environment. Without the shim we'd have to thread
+      # `-target` through every CMake invocation, which doesn't survive
+      # try_compile sub-projects.
+      - name: Set up Zig cross shims
+        if: matrix.kind == 'zig'
+        run: |
+          SHIM=/tmp/zig-shim
+          mkdir -p "$SHIM"
+          MCPU=""
+          if [ -n "${{ matrix.mcpu }}" ]; then
+            MCPU="-mcpu=${{ matrix.mcpu }}"
+          fi
+          cat > "$SHIM/cc" <<EOF
+          #!/bin/sh
+          exec zig cc -target ${{ matrix.zig_target }} $MCPU "\$@"
+          EOF
+          cat > "$SHIM/cxx" <<EOF
+          #!/bin/sh
+          exec zig c++ -target ${{ matrix.zig_target }} $MCPU "\$@"
+          EOF
+          cat > "$SHIM/ar"     <<'EOF'
+          #!/bin/sh
+          exec zig ar "$@"
+          EOF
+          cat > "$SHIM/ranlib" <<'EOF'
+          #!/bin/sh
+          exec zig ranlib "$@"
+          EOF
+          chmod +x "$SHIM"/*
+          {
+            echo "CC=$SHIM/cc"
+            echo "CXX=$SHIM/cxx"
+            echo "AR=$SHIM/ar"
+            echo "RANLIB=$SHIM/ranlib"
+            echo "AFM_ZIG_TARGET=${{ matrix.zig_target }}"
+          } >> "$GITHUB_ENV"
 
       - name: Configure
-        env:
-          # Used by cmake/toolchain-musl-cross.cmake; ignored by the mingw
-          # toolchains. Setting it unconditionally keeps the run line simple.
-          AFM_MUSL_TARGET: ${{ matrix.triple }}
         run: |
-          if [ "${{ matrix.kind }}" = "musl" ]; then
-            TC=cmake/toolchain-musl-cross.cmake
+          if [ "${{ matrix.kind }}" = "zig" ]; then
+            TC=cmake/toolchain-zig-cc.cmake
           else
             TC="${{ matrix.toolchain }}"
           fi
-          cmake -S . -B build -G Ninja \
+          cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_TOOLCHAIN_FILE="$TC"
 
@@ -103,9 +148,19 @@ jobs:
           BIN=build/anonfm_vsrat_reader${{ matrix.ext }}
           OUT=anonfm_vsrat_reader-${{ matrix.name }}${{ matrix.ext }}
           mkdir -p dist
-          # Strip with the cross-toolchain's strip; ignore failure (some
-          # exotic targets ship without a separate strip wrapper).
-          "${{ matrix.triple }}-strip" "$BIN" || true
+          # Strip with whatever knows the target ABI:
+          # - mingw: triple-prefixed strip from binutils
+          # - zig:   llvm-strip (handles every arch llvm knows; ships
+          #          with the toolchain). Fall back to host strip if
+          #          neither is around — losing strip is OK.
+          if [ "${{ matrix.kind }}" = "mingw" ]; then
+            "${{ matrix.triple }}-strip" "$BIN" || true
+          else
+            llvm-strip "$BIN" 2>/dev/null \
+              || /opt/zig/lib/zig*/llvm-strip "$BIN" 2>/dev/null \
+              || strip "$BIN" 2>/dev/null \
+              || true
+          fi
           cp "$BIN" "dist/$OUT"
           ls -la "dist/$OUT"
           file "dist/$OUT" || true
@@ -119,9 +174,9 @@ jobs:
           retention-days: 14
 
   # =====================================================================
-  # Release: only on tag push. Pulls all per-target artifacts, drops them
-  # into a single draft GitHub Release. The draft is intentional — you
-  # review the binaries and hit "Publish" yourself.
+  # Release: only on tag push. Pulls all per-target artifacts, drops
+  # them into a single draft GitHub Release. Draft is intentional —
+  # you review the binaries and hit "Publish" yourself.
   # =====================================================================
   release:
     name: Draft GitHub Release
@@ -135,8 +190,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
-          merge-multiple: true   # flatten — every artifact contains exactly
-                                 # one binary, so they all land in dist/
+          merge-multiple: true   # flatten — every artifact contains
+                                 # exactly one binary
 
       - name: List collected binaries
         run: |

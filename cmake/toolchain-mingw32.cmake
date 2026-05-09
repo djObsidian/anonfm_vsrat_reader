@@ -1,22 +1,19 @@
 # Cross-compile for 32-bit Windows (i686) using mingw-w64.
 #
-# Why a separate i686 toolchain in addition to the x86_64 one:
-#   * Windows XP (NT 5.1) and Server 2003 only have 32-bit kernels in the
-#     wild. To run there at all the .exe must be PE32 (i386), not PE32+.
-#   * Windows 7 32-bit installations still exist on netbooks / embedded
-#     industrial gear. A 32-bit binary runs on both 32- and 64-bit Win7.
+# Targets Windows 7 32-bit and up. We tried XP (NT 5.1) originally,
+# but wolfSSL hard-codes a call to `InetPton` (the Vista+ Unicode-aware
+# wrapper in ws2_32) which simply does not exist in XP-era ws2_32.dll.
+# Patching wolfSSL to fall back to inet_addr would mean shaving the SSL
+# stack down — out of scope. So XP is dropped, the smallest supported
+# Windows is now 7-32-bit (still useful for old netbooks / embedded
+# industrial gear running 32-bit Win7 / 8.1).
 #
-# We pin the Windows API target to NT 5.1 (XP / Server 2003) and the
-# subsystem version on the PE header to match. mingw-w64 calls into a few
-# Vista+ APIs by default; everything we use (GetStdHandle, SetConsoleMode,
-# SetConsoleOutputCP, SetConsoleTextAttribute) is XP-era. Virtual-terminal
-# processing on the console isn't available on Win7 — render.c falls back
-# to SetConsoleTextAttribute via the helpers in platform.c, so colours
-# work on legacy CMD too.
+# A 32-bit binary still runs on both 32- and 64-bit Win7+, so this also
+# serves users who want a smaller .exe on x64 Windows.
 
 set(CMAKE_SYSTEM_NAME      Windows)
 set(CMAKE_SYSTEM_PROCESSOR i686)
-set(CMAKE_SYSTEM_VERSION   5.1)   # XP / Server 2003 era
+set(CMAKE_SYSTEM_VERSION   6.1)   # Win7 / Server 2008 R2 era
 
 set(TOOLCHAIN_PREFIX i686-w64-mingw32)
 
@@ -31,11 +28,10 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
-# Pin to XP-era Windows API headers so we don't accidentally call a
-# Vista+ symbol that won't resolve at load time on the target.
-add_compile_definitions(WINVER=0x0501 _WIN32_WINNT=0x0501)
+# Pin the Windows API target to NT 6.1 (Win7). See comment in
+# toolchain-mingw64.cmake — wolfSSL's InetPton call needs >= 0x0600.
+add_compile_definitions(WINVER=0x0601 _WIN32_WINNT=0x0601)
 
-# PE header SUBSYSTEM version 5.01 = "this exe runs on XP". Without this
-# the loader on XP refuses with "not a valid Win32 application".
+# PE header SUBSYSTEM version 6.01 = "this exe runs on Win7+".
 set(CMAKE_EXE_LINKER_FLAGS_INIT
-    "-static -static-libgcc -static-libstdc++ -Wl,--major-subsystem-version,5 -Wl,--minor-subsystem-version,1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1")
+    "-static -static-libgcc -static-libstdc++ -Wl,--major-subsystem-version,6 -Wl,--minor-subsystem-version,1 -Wl,--major-os-version,6 -Wl,--minor-os-version,1")
