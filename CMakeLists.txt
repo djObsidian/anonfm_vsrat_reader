@@ -6,11 +6,19 @@ set(AFM_C_FLAGS_STRICT
     -std=c89
     -pedantic
     -Wall
-    -Wextra
-    -Wno-long-long
-    -Wno-overlength-strings
     -D_POSIX_C_SOURCE=200809L
 )
+
+if (MSVC)
+	# list(APPEND AFM_C_FLAGS_STRICT -W4)
+	list(APPEND AFM_C_FLAGS_STRICT /wd4711 /wd4710)
+else()
+    list(APPEND AFM_C_FLAGS_STRICT
+        -Wextra
+        -Wno-long-long
+        -Wno-overlength-strings
+    )
+endif()
 
 # wolfSSL's constant-time HMAC trips a false-positive -Werror=stringop-overflow
 # under newer gcc. Drop -Werror project-wide; our own target uses an explicit
