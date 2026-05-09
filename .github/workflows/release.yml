@@ -1,7 +1,7 @@
 name: Release
 
 # Triggers:
-#   push of a tag like v1.2.3   -> build all 12 targets, attach as a draft
+#   push of a tag like v1.2.3   -> build all 11 targets, attach as a draft
 #                                  GitHub Release (so a human reviews and
 #                                  hits "Publish")
 #   manual workflow_dispatch    -> build everything, leave artifacts on the
@@ -20,7 +20,7 @@ env:
 
 jobs:
   # =====================================================================
-  # Build: 12-target matrix.
+  # Build: 11-target matrix.
   #
   # Linux: cross-compiled with `zig cc` (one toolchain tarball, all 11
   # archs covered, downloaded from ziglang.org which GH Actions can
@@ -53,9 +53,12 @@ jobs:
           - { name: linux-mipsel,  kind: zig, zig_target: mipsel-linux-musl,    ext: '' }
           - { name: linux-riscv64, kind: zig, zig_target: riscv64-linux-musl,   ext: '' }
           - { name: linux-ppc64le, kind: zig, zig_target: powerpc64le-linux-musl, ext: '' }
-          # s390x: Zig accepts no "generic" CPU for this arch, so we pin to
-          # z10 — IBM's 2008 baseline that covers everything still in service.
-          - { name: linux-s390x,   kind: zig, zig_target: s390x-linux-musl, mcpu: z10, ext: '' }
+          # s390x dropped: Zig 0.13 + LLVM s390x backend can't lower the
+          # fp_to_fp16 SDAG node, which compiler_rt uses inside __fixhfsi.
+          # Even a trivial main(){} fails to link with `LLVM ERROR: Cannot
+          # select: ... fp_to_fp16`. Bumping mcpu doesn't help — IBM z16
+          # added BFloat16 but no IEEE float16. Wait for an upstream Zig /
+          # LLVM fix, then re-add.
           # ---- Windows via mingw-w64 --------------------------------
           - { name: windows-x86_64,    kind: mingw, triple: x86_64-w64-mingw32, ext: '.exe', toolchain: cmake/toolchain-mingw64.cmake }
           - { name: windows-i686-win7, kind: mingw, triple: i686-w64-mingw32,   ext: '.exe', toolchain: cmake/toolchain-mingw32.cmake }

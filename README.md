@@ -162,14 +162,19 @@ cmake --build build-aarch64 -j20
 Меняй `aarch64-linux-musl` на любой Zig-таргет: `x86-linux-musl`,
 `arm-linux-musleabihf` (`-mcpu=cortex_a7`/`arm1176jzf_s`),
 `mips-linux-musl`, `mipsel-linux-musl`, `riscv64-linux-musl`,
-`powerpc64le-linux-musl`, `s390x-linux-musl` (последнему нужен явный
-`-mcpu=z10`, у Zig нет дефолтного s390x baseline).
+`powerpc64le-linux-musl`.
 
-**Что у Zig не работает**: ARMv5 (NSLU2-класс) — pre-ARMv6 не имеет
-нативных `LDREX`/`STREX`, и GCC builtins `__sync_*` ищут libgcc-стабы,
-которые Zig не шипит. Lookup на kuser_helper делает Linux-libgcc, но
-не Zig-compiler_rt. Хочешь NSLU2 — собирай через musl-cross-make
-(`toolchain-musl-cross.cmake`) с хоста, где musl.cc достижим.
+**Что у Zig не работает**:
+- **ARMv5** (NSLU2-класс) — pre-ARMv6 не имеет нативных `LDREX`/`STREX`,
+  и GCC builtins `__sync_*` ищут libgcc-стабы, которые Zig не шипит.
+  Lookup на kuser_helper делает Linux-libgcc, но не Zig-compiler_rt.
+- **s390x** (IBM мейнфрейм) — LLVM s390x backend не умеет лоуэрить
+  `fp_to_fp16` SDAG-ноду, а Zig's compiler_rt тянет `__fixhfsi` для
+  любого бинаря. Падает на любом `main(){}`. Ждём апстрим-фикс в Zig.
+
+В обоих случаях если очень надо — собирай через musl-cross-make
+(`toolchain-musl-cross.cmake`) с хоста, где musl.cc достижим:
+там libgcc полная, с armv5 kuser_helper стабами и s390x compiler_rt.
 
 **Путь №2 — через классический musl-cross-make** (если интернет
 не блокирует musl.cc):
@@ -199,7 +204,7 @@ zlib, libpsl, и тащит из `/usr/include` и `/usr/lib` в кросс-сб
 - `mips-linux-musl` — ✓ MIPS32 BE static ELF
 
 **Проверено через CI (см. [`.github/workflows/release.yml`](.github/workflows/release.yml))**:
-все 12 таргетов из релиз-матрицы. На push тега `v*` собирается draft
+все 11 таргетов из релиз-матрицы. На push тега `v*` собирается draft
 GitHub Release со всеми бинарями — заходи в Releases и нажимай Publish.
 
 ### Сборка под всё сразу
