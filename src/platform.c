@@ -7,6 +7,7 @@
 
 #ifdef _WIN32
 #  include <windows.h>
+#  include <wchar.h>
 #  include <io.h>
 #  ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #    define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
@@ -30,6 +31,50 @@ static int g_use_wide_console = 0;
 static WORD g_saved_attrs = 0x07;  /* sane default: light-grey on black */
 #endif
 
+#ifdef _WIN32
+/* Try to ensure the console uses a TrueType font that has Cyrillic
+ * (and a decent chunk of the rest of Unicode). Win7 default is often
+ * "Raster Fonts" / "Терминал" which only has CP866 glyphs — Unicode
+ * chars sent via WriteConsoleW just don't render at all (no .notdef
+ * box, just empty). Switching to Consolas (TrueType, ships since
+ * Vista, full Cyrillic) makes WriteConsoleW finally show Russian.
+ *
+ * SetCurrentConsoleFontEx is Vista+; on older Windows the symbol
+ * resolves at link time but we already pinned _WIN32_WINNT=0x0601
+ * (Win7) in both mingw toolchains, so it's always available. We
+ * keep the user's current size if we can read it, otherwise pick a
+ * sensible 16-pixel default.
+ *
+ * Failure is silent — if Consolas isn't installed (super old
+ * Server Core?) we leave whatever font was selected. The user can
+ * also override via cmd.exe Properties → Font. */
+static void afm_force_cyrillic_font(HANDLE h_out)
+{
+    CONSOLE_FONT_INFOEX cfi;
+    memset(&cfi, 0, sizeof(cfi));
+    cfi.cbSize = sizeof(cfi);
+
+    /* Best-effort: read current font so we keep the user's size. */
+    if (!GetCurrentConsoleFontEx(h_out, FALSE, &cfi)) {
+        cfi.dwFontSize.X = 0;       /* width auto-derived from Y */
+        cfi.dwFontSize.Y = 16;
+    }
+    /* If the current face is empty or the legacy raster terminal,
+     * force Consolas. If user already picked a TTF (Lucida Console,
+     * Cascadia, ...) leave it alone. */
+    if (cfi.FaceName[0] == L'\0'
+        || _wcsicmp(cfi.FaceName, L"Terminal") == 0
+        || _wcsicmp(cfi.FaceName, L"Раст шрифты") == 0)
+    {
+        cfi.FontFamily = FF_DONTCARE | TMPF_TRUETYPE;
+        cfi.FontWeight = FW_NORMAL;
+        wcscpy(cfi.FaceName, L"Consolas");
+        if (cfi.dwFontSize.Y == 0) cfi.dwFontSize.Y = 16;
+        SetCurrentConsoleFontEx(h_out, FALSE, &cfi);
+    }
+}
+#endif
+
 void afm_console_init(void)
 {
 #ifdef _WIN32
@@ -40,11 +85,12 @@ void afm_console_init(void)
     int    vt_ok       = 0;
     int    is_console  = 0;
 
-    /* Codepage matters only when stdout is redirected to a console-based
-     * tool that DOES read bytes (rare). For our actual console writes we
-     * use WriteConsoleW below, which is codepage-independent. Setting
-     * 65001 anyway, in case g_use_wide_console ends up false. */
-    SetConsoleOutputCP(CP_UTF8);
+    /* Deliberately do NOT call SetConsoleOutputCP(CP_UTF8) here.
+     * On Win7 cmd.exe `chcp 65001` + WriteConsoleW interact badly
+     * and Cyrillic comes out as nothing at all (chars consumed but
+     * not rendered). We don't need the codepage anyway — every
+     * console write goes through MultiByteToWideChar + WriteConsoleW
+     * below, which takes UTF-16 natively, codepage-independent. */
 
     h_out = GetStdHandle(STD_OUTPUT_HANDLE);
     if (h_out != INVALID_HANDLE_VALUE && GetConsoleScreenBufferInfo(h_out, &csbi)) {
@@ -61,16 +107,17 @@ void afm_console_init(void)
     if (h_err != INVALID_HANDLE_VALUE && GetConsoleMode(h_err, &mode)) {
         SetConsoleMode(h_err, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     }
+    if (is_console) {
+        afm_force_cyrillic_font(h_out);
+    }
     /* If VT could not be enabled (Win7 cmd.exe, older terminals), drop to
      * legacy attribute-based colouring. Output redirected to a file gets
      * GetConsoleMode == 0; treat that as "ANSI is fine" — escapes in a
      * file are normal. */
     g_ansi_ok = vt_ok || !is_console;
     /* Use the WriteConsoleW path whenever stdout points at a console.
-     * That fixes the Win7 codepage chaos: even with CP=65001, cmd.exe
-     * writes UTF-8 byte-by-byte and splits multi-byte sequences, so
-     * Cyrillic comes out as CP866 line-drawing soup. WriteConsoleW takes
-     * UTF-16 wide chars directly and bypasses that whole pipeline. */
+     * On Win7 this is the ONLY way to render Cyrillic correctly:
+     * direct UTF-16 to console, bypassing every codepage layer. */
     g_use_wide_console = is_console;
 #else
     g_ansi_ok = 1;

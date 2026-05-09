@@ -21,6 +21,11 @@
 
 ![UI](image_powershell.png)
 
+И в той же программе под Windows 7 (cmd.exe, mingw32-сборка `windows-i686-win7`)
+— кириллица, цвета и бейджи целиком работают:
+
+![Win7](shindows7.png)
+
 ## Эндпоинт
 
 `GET https://anon.fm/answers.js` — JSON-массив из ~50 последних кукареков.
