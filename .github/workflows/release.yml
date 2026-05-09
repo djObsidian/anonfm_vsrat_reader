@@ -1,0 +1,153 @@
+name: Release
+
+# Triggers:
+#   push of a tag like v1.2.3   -> build all 13 targets, attach as a draft
+#                                  GitHub Release (so a human reviews and
+#                                  hits "Publish")
+#   manual workflow_dispatch    -> build everything, leave artifacts on the
+#                                  Actions run page, no release created
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed by the release job to create the draft
+
+jobs:
+  # =====================================================================
+  # Build: 13-target matrix, all cross-compiled from a single Ubuntu host.
+  # =====================================================================
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ---- Linux musl-static (uname-style names; what the user sees) ----
+          - { name: linux-x86_64,    kind: musl,  triple: x86_64-linux-musl,       ext: '' }
+          - { name: linux-i686,      kind: musl,  triple: i686-linux-musl,         ext: '' }
+          - { name: linux-aarch64,   kind: musl,  triple: aarch64-linux-musl,      ext: '' }
+          - { name: linux-armv7l,    kind: musl,  triple: armv7l-linux-musleabihf, ext: '' }
+          - { name: linux-armv6,     kind: musl,  triple: armv6-linux-musleabihf,  ext: '' }
+          - { name: linux-armv5l,    kind: musl,  triple: armv5l-linux-musleabi,   ext: '' }
+          - { name: linux-mips,      kind: musl,  triple: mips-linux-musl,         ext: '' }
+          - { name: linux-mipsel,    kind: musl,  triple: mipsel-linux-musl,       ext: '' }
+          - { name: linux-riscv64,   kind: musl,  triple: riscv64-linux-musl,      ext: '' }
+          - { name: linux-ppc64le,   kind: musl,  triple: powerpc64le-linux-musl,  ext: '' }
+          - { name: linux-s390x,     kind: musl,  triple: s390x-linux-musl,        ext: '' }
+          # ---- Windows mingw ----
+          - { name: windows-x86_64,    kind: mingw, triple: x86_64-w64-mingw32, ext: '.exe', toolchain: cmake/toolchain-mingw64.cmake }
+          - { name: windows-i686-xp,   kind: mingw, triple: i686-w64-mingw32,   ext: '.exe', toolchain: cmake/toolchain-mingw32.cmake }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build file
+
+      # mingw-w64 host package provides BOTH x86_64-w64-mingw32-* and
+      # i686-w64-mingw32-* binaries, so it covers both Windows targets.
+      - name: Install mingw-w64
+        if: matrix.kind == 'mingw'
+        run: sudo apt-get install -y --no-install-recommends mingw-w64
+
+      # musl-cross toolchain bundles from musl.cc are ~100-150 MB.
+      # Cache by target triple so we download once per (target, cache-version).
+      # Bump the v1 suffix to invalidate every cache.
+      - name: Cache musl-cross toolchain
+        if: matrix.kind == 'musl'
+        id: cache-musl
+        uses: actions/cache@v4
+        with:
+          path: ~/cross/${{ matrix.triple }}-cross
+          key: musl-cross-${{ matrix.triple }}-v1
+
+      - name: Download musl-cross toolchain
+        if: matrix.kind == 'musl' && steps.cache-musl.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/cross
+          cd ~/cross
+          curl -fsSL -o tc.tgz "https://musl.cc/${{ matrix.triple }}-cross.tgz"
+          tar xf tc.tgz
+          rm tc.tgz
+
+      - name: Add musl-cross to PATH
+        if: matrix.kind == 'musl'
+        run: echo "$HOME/cross/${{ matrix.triple }}-cross/bin" >> $GITHUB_PATH
+
+      - name: Configure
+        env:
+          # Used by cmake/toolchain-musl-cross.cmake; ignored by the mingw
+          # toolchains. Setting it unconditionally keeps the run line simple.
+          AFM_MUSL_TARGET: ${{ matrix.triple }}
+        run: |
+          if [ "${{ matrix.kind }}" = "musl" ]; then
+            TC=cmake/toolchain-musl-cross.cmake
+          else
+            TC="${{ matrix.toolchain }}"
+          fi
+          cmake -S . -B build -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_TOOLCHAIN_FILE="$TC"
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Strip & stage binary
+        run: |
+          BIN=build/anonfm_vsrat_reader${{ matrix.ext }}
+          OUT=anonfm_vsrat_reader-${{ matrix.name }}${{ matrix.ext }}
+          mkdir -p dist
+          # Strip with the cross-toolchain's strip; ignore failure (some
+          # exotic targets ship without a separate strip wrapper).
+          "${{ matrix.triple }}-strip" "$BIN" || true
+          cp "$BIN" "dist/$OUT"
+          ls -la "dist/$OUT"
+          file "dist/$OUT" || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: anonfm_vsrat_reader-${{ matrix.name }}
+          path: dist/anonfm_vsrat_reader-${{ matrix.name }}${{ matrix.ext }}
+          if-no-files-found: error
+          retention-days: 14
+
+  # =====================================================================
+  # Release: only on tag push. Pulls all per-target artifacts, drops them
+  # into a single draft GitHub Release. The draft is intentional — you
+  # review the binaries and hit "Publish" yourself.
+  # =====================================================================
+  release:
+    name: Draft GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true   # flatten — every artifact contains exactly
+                                 # one binary, so they all land in dist/
+
+      - name: List collected binaries
+        run: |
+          ls -la dist/
+          echo "---"
+          file dist/* || true
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
