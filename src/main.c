@@ -14,7 +14,7 @@
  * on any error so adding mirrors is just appending to this list (or
  * passing more --from-url on the command line). */
 static const char *AFM_DEFAULT_URLS[] = {
-    //"https://anon.fm/answers.js"
+    /*"https://anon.fm/answers.js"*/
 	"https://anon.radio.fm/answers.js"
     /* add more public mirrors here once they exist */
 };
