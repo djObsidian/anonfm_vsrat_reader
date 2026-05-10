@@ -89,8 +89,8 @@ set(USE_OPENLDAP       OFF CACHE BOOL "" FORCE)
 set(ENABLE_UNIX_SOCKETS ON CACHE BOOL "" FORCE)
 set(CURL_USE_PKGCONFIG OFF CACHE BOOL "" FORCE)
 # Point libcurl at the FetchContent'd wolfSSL build/install
-set(WolfSSL_INCLUDE_DIR "${wolfssl_SOURCE_DIR}" CACHE PATH "" FORCE)
-set(WolfSSL_LIBRARY     wolfssl                CACHE STRING "" FORCE)
+set(WOLFSSL_INCLUDE_DIR "${wolfssl_SOURCE_DIR}" CACHE PATH "" FORCE)
+set(WOLFSSL_LIBRARY     wolfssl                CACHE STRING "" FORCE)
 FetchContent_MakeAvailable(curl)
 
 # ----- bake Mozilla CA bundle into the binary ----------------------------
