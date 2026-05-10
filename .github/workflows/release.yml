@@ -158,17 +158,14 @@ jobs:
           BIN=build/anonfm_vsrat_reader${{ matrix.ext }}
           OUT=anonfm_vsrat_reader-${{ matrix.name }}${{ matrix.ext }}
           mkdir -p dist
-          # Strip with whatever knows the target ABI:
-          # - mingw: triple-prefixed strip from binutils
-          # - zig:   `zig objcopy --strip-all` — bundled with the Zig
-          #          toolchain, knows every arch llvm supports. Cuts a
-          #          fresh zig-cc binary from ~10 MB to ~2 MB.
+          # zig builds: linker already stripped via `-Wl,-s` in
+          # toolchain-zig-cc.cmake. We used to run `zig objcopy
+          # --strip-all` here, but it fails on big-endian MIPS
+          # ("ELF to ELF copying only supports native endian") and
+          # silently shipped a 10 MB binary. Linker strip works for
+          # every target lld supports.
           if [ "${{ matrix.kind }}" = "mingw" ]; then
-            "${{ matrix.triple }}-strip" "$BIN" || true
-          else
-            zig objcopy --strip-all --strip-debug "$BIN" "$BIN.stripped" \
-              && mv "$BIN.stripped" "$BIN" \
-              || true
+            "${{ matrix.triple }}-strip" "$BIN"
           fi
           cp "$BIN" "dist/$OUT"
           ls -la "dist/$OUT"

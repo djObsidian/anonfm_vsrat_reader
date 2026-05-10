@@ -67,4 +67,4 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 # vs ~2.5 MB stripped + gc'd.
 set(CMAKE_C_FLAGS_INIT          "-ffunction-sections -fdata-sections")
 set(CMAKE_CXX_FLAGS_INIT        "-ffunction-sections -fdata-sections")
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-static -Wl,--gc-sections")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-static -Wl,--gc-sections -Wl,-s")
