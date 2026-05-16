@@ -206,6 +206,83 @@ zlib, libpsl, и тащит из `/usr/include` и `/usr/lib` в кросс-сб
 все 11 таргетов из релиз-матрицы. На push тега `v*` собирается draft
 GitHub Release со всеми бинарями — заходи в Releases и нажимай Publish.
 
+### Кросс на Android (ведро)
+
+Два пути, оба дают бинарь который запускается в Termux'е и из `adb shell`
+без рута. Выбирай по вкусу.
+
+**Путь №1 — через Android NDK** (правильный, нативный bionic):
+
+```bash
+# 1) скачать NDK (любая версия r25+, ~1 GB)
+curl -fsSL -o ndk.zip \
+     https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
+unzip -q ndk.zip
+export ANDROID_NDK_ROOT="$PWD/android-ndk-r26d"
+
+# 2) собрать (arm64-v8a = современные телефоны)
+cmake -S . -B build-android-aarch64 -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-android-ndk.cmake \
+      -DAFM_ANDROID_ABI=arm64-v8a \
+      -DAFM_ANDROID_API=24
+cmake --build build-android-aarch64 -j20
+```
+
+Получаешь ~1.2 МБ ELF PIE, dynamic-linked против bionic (`libc.so`,
+`libm.so`, `libdl.so` — они есть на каждом устройстве). API 24 = Android
+7.0 Nougat (август 2016) — покрывает 99%+ активных устройств. Пропиши
+`AFM_ANDROID_ABI=armeabi-v7a` для 32-битных ARM телефонов или `x86_64`
+для эмулятора / Chromebook'а.
+
+**Путь №2 — через существующий musl-static aarch64** (ленивый,
+зато без NDK):
+
+В Termux'е и через `adb shell` отлично работает наш `linux-aarch64`
+бинарь из релизной матрицы — это static-PIE ARM64 ELF, не зависит ни от
+bionic, ни от чего-либо ещё, делает syscall'ы напрямую в Linux-кернел
+(а Android — это просто Linux кернел в фуфайке). Так же поступают Tor,
+dropbear, hysteria и прочие проекты, которым лень содержать отдельную
+матрицу под Android.
+
+```bash
+# просто скачиваем готовый musl-бинарь — он же android-бинарь
+curl -fLo anonfm_vsrat_reader \
+     https://github.com/dobrokoder/anonfm_vsrat_reader/releases/latest/download/anonfm_vsrat_reader-linux-aarch64
+chmod +x anonfm_vsrat_reader
+```
+
+Разница на проводе: ~2.5 МБ (musl-static) против ~1.2 МБ (NDK-bionic).
+Тащит больше за счёт встроенной libc; зато ровно один артефакт на любое
+ARM-устройство, от роутера до телефона.
+
+### Запуск на устройстве
+
+**Через Termux** (рекомендую — нормальный xterm-256color, цвета и
+кириллица работают из коробки):
+
+```bash
+# 1) поставь Termux из F-Droid (NE из Google Play — там устарел)
+# 2) внутри Termux:
+pkg install wget
+wget https://github.com/dobrokoder/anonfm_vsrat_reader/releases/latest/download/anonfm_vsrat_reader-android-aarch64 \
+     -O anonfm_vsrat_reader
+chmod +x anonfm_vsrat_reader
+./anonfm_vsrat_reader
+```
+
+**Через `adb shell`** (для разработчиков / автоматизации):
+
+```bash
+adb push anonfm_vsrat_reader-android-aarch64 /data/local/tmp/anonfm
+adb shell chmod +x /data/local/tmp/anonfm
+adb shell /data/local/tmp/anonfm -o -n 5
+```
+
+Конфиг цветов: Termux выставляет `$HOME=/data/data/com.termux/files/home`,
+наш XDG-поиск находит `~/.config/anonfm/colors.conf` без приключений.
+SOCKS5 через `--socks5 127.0.0.1:9050` если поднят Orbot / встроенный
+Tor в Termux'е.
+
 ### Сборка под всё сразу
 
 ```bash
@@ -213,7 +290,8 @@ GitHub Release со всеми бинарями — заходи в Releases и 
 ```
 
 Идёт по матрице (`win64`, `win32-xp`, `linux-x86_64`, `linux-aarch64`,
-`linux-armv5`, `linux-mips`, `linux-riscv64`, ...), пропускает таргеты,
-для которых нет тулчейна на PATH, и складывает готовые бинари в `dist/`.
-Как у Tor / hysteria — один тарбол с зоопарком на любую железку, от
-маршрутизатора с 4 МБ flash до AI кластера на RISC-V.
+`linux-armv5`, `linux-mips`, `linux-riscv64`, `android-aarch64`,
+`android-armv7a`, ...), пропускает таргеты, для которых нет тулчейна на
+PATH (или `ANDROID_NDK_ROOT` для андроида), и складывает готовые бинари
+в `dist/`. Как у Tor / hysteria — один тарбол с зоопарком на любую
+железку, от маршрутизатора с 4 МБ flash до AI кластера на RISC-V.

@@ -2,7 +2,8 @@
 
 Всратый CLI-ридер кукареканий со стороны диджейки на [anon.fm](https://anon.fm).
 Чистый ANSI C (C89), libcurl + wolfSSL, статически слинкованный, собирается
-под WSL2 и кроссом в `.exe` под винду из той же папки.
+под WSL2, кроссом в `.exe` под винду, и под Android (Termux / adb shell)
+из той же папки.
 
 Делает то же самое что [`kekejucica.py`](https://anon.fm/console/) с офсайта,
 но:
@@ -152,6 +153,9 @@ listener_text   *               off     # тело сообщений слуша
 * No AI, no LLM-фичи, no GitHub Copilot suggestions accepted (ну почти)
 * No Windows 10/11 required
 * Friendly usage with Windows 7
+* Friendly usage with Android via Termux / adb shell (bionic-нативно через NDK
+  или просто кидаем aarch64-musl бинарь — он же Linux, ему пофиг)
+* No Google Play Services required, no AndroidX, no Gradle, no `R.java`
 * Debugged with `printf` и иногда `fprintf(stderr, ...)`
 * anon.fm compatible, build with anon.fm technology
 * Mozilla CA вшит прямо в `.text` секцию, как завещали отцы
@@ -160,6 +164,10 @@ listener_text   *               off     # тело сообщений слуша
 
 ## Todo
 
+* Полноценный APK для андроида без Java/Kotlin/Gradle — pure C
+  NativeActivity в стиле rawdrawandroid, иконка на рабочем столе,
+  фоновый сервис с push-уведомлением на новый кукарек (Phase 2 — пока
+  есть только Phase 1, бинарь под Termux / adb shell)
 * Поддержка Fidonet — пусть кукареки заодно расходятся по эхам
 * Поддержка USENET / NNTP — `nntp://news.anon.fm/alt.anon.fm.kukareki`,
   читать через `tin`/`slrn`/`Pan`, как в 1998-м
@@ -207,6 +215,13 @@ A: Нет. Если очень надо — ваш терминал уже GUI.
 
 **Q: А под BSD соберётся?**
 A: Должно. Не пробовал. Если что — кидай PR.
+
+**Q: А под Android?**
+A: Да, два варианта — `android-aarch64` через NDK (правильный bionic-бинарь,
+~1.2 МБ) или просто `linux-aarch64` из релиза (musl-static, ~2.5 МБ — тоже
+запустится в Termux'е, потому что Android это Linux в фуфайке). Подробности
+— в [DEV.md](DEV.md), секция «Кросс на Android». Полноценного APK с иконкой
+пока нет — это Phase 2, когда руки дойдут.
 
 ## Лицензия
 

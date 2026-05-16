@@ -1,7 +1,7 @@
 name: Release
 
 # Triggers:
-#   push of a tag like v1.2.3   -> build all 11 targets, attach as a draft
+#   push of a tag like v1.2.3   -> build all 14 targets, attach as a draft
 #                                  GitHub Release (so a human reviews and
 #                                  hits "Publish")
 #   manual workflow_dispatch    -> build everything, leave artifacts on the
@@ -20,12 +20,15 @@ env:
 
 jobs:
   # =====================================================================
-  # Build: 11-target matrix.
+  # Build: 14-target matrix.
   #
-  # Linux: cross-compiled with `zig cc` (one toolchain tarball, all 11
-  # archs covered, downloaded from ziglang.org which GH Actions can
-  # reach — unlike musl.cc).
-  #
+  # Linux:   cross-compiled with `zig cc` (one toolchain tarball, every
+  #          arch covered, downloaded from ziglang.org which GH Actions
+  #          can reach — unlike musl.cc).
+  # Android: cross-compiled with NDK clang against bionic. Preinstalled
+  #          on ubuntu-22.04 at $ANDROID_NDK_LATEST_HOME, no download.
+  #          Dynamic-linked against libc.so/libm.so/libdl.so which
+  #          ship on every device. Runs in Termux or `adb shell`.
   # Windows: cross-compiled with mingw-w64 from the Ubuntu apt repo.
   # =====================================================================
   build:
@@ -59,6 +62,16 @@ jobs:
           # select: ... fp_to_fp16`. Bumping mcpu doesn't help — IBM z16
           # added BFloat16 but no IEEE float16. Wait for an upstream Zig /
           # LLVM fix, then re-add.
+          # ---- Android via NDK (bionic, dynamic-linked) -------------
+          # API 24 = Android 7.0 (Aug 2016), covers 99%+ of devices in
+          # 2026. Dynamic-linked against bionic (libc.so / libm.so /
+          # libdl.so) which ships on every Android device — final ELF
+          # is ~1.5 MB with no extra runtime deps. Runs in Termux or
+          # via `adb shell`. NDK is preinstalled on the ubuntu-22.04
+          # runner at $ANDROID_NDK_LATEST_HOME, so no download step.
+          - { name: android-aarch64, kind: ndk, android_abi: arm64-v8a,    android_api: 24, ext: '' }
+          - { name: android-armv7a,  kind: ndk, android_abi: armeabi-v7a, android_api: 24, ext: '' }
+          - { name: android-x86_64,  kind: ndk, android_abi: x86_64,      android_api: 24, ext: '' }
           # ---- Windows via mingw-w64 --------------------------------
           - { name: windows-x86_64,    kind: mingw, triple: x86_64-w64-mingw32, ext: '.exe', toolchain: cmake/toolchain-mingw64.cmake }
           - { name: windows-i686-win7, kind: mingw, triple: i686-w64-mingw32,   ext: '.exe', toolchain: cmake/toolchain-mingw32.cmake }
@@ -75,7 +88,7 @@ jobs:
         if: matrix.kind == 'mingw'
         run: sudo apt-get install -y --no-install-recommends mingw-w64
 
-      # Cache the Zig tarball so 11 parallel matrix legs only download
+      # Cache the Zig tarball so all parallel matrix legs only download
       # once. Bump ZIG_VERSION above + the suffix below to invalidate.
       - name: Cache Zig
         if: matrix.kind == 'zig'
@@ -139,16 +152,38 @@ jobs:
             echo "AFM_ZIG_TARGET=${{ matrix.zig_target }}"
           } >> "$GITHUB_ENV"
 
+      # Locate the NDK that ubuntu-22.04 ships pre-installed. The
+      # `$ANDROID_NDK_LATEST_HOME` env var points at the newest one
+      # (r25c+ as of 2026), which is more than recent enough for our
+      # API-24 builds. Fall back through the legacy var names just
+      # in case a future image renames things.
+      - name: Locate Android NDK
+        if: matrix.kind == 'ndk'
+        run: |
+          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}}"
+          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then
+            echo "no preinstalled NDK on this runner — listing /usr/local/lib/android/sdk/ndk:" >&2
+            ls /usr/local/lib/android/sdk/ndk 2>/dev/null || true
+            exit 1
+          fi
+          echo "Using NDK at: $NDK"
+          ls "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin" | head -10
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+
       - name: Configure
         run: |
-          if [ "${{ matrix.kind }}" = "zig" ]; then
-            TC=cmake/toolchain-zig-cc.cmake
-          else
-            TC="${{ matrix.toolchain }}"
-          fi
+          EXTRA=()
+          case "${{ matrix.kind }}" in
+            zig)   TC=cmake/toolchain-zig-cc.cmake ;;
+            ndk)   TC=cmake/toolchain-android-ndk.cmake
+                   EXTRA+=( -DAFM_ANDROID_ABI=${{ matrix.android_abi }}
+                            -DAFM_ANDROID_API=${{ matrix.android_api }} ) ;;
+            *)     TC="${{ matrix.toolchain }}" ;;
+          esac
           cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_TOOLCHAIN_FILE="$TC"
+                -DCMAKE_TOOLCHAIN_FILE="$TC" \
+                "${EXTRA[@]}"
 
       - name: Build
         run: cmake --build build -j

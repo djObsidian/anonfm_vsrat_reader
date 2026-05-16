@@ -3,6 +3,7 @@ build/
 build-*/
 out/
 cmake-build-*/
+dist/
 
 # vendored external sources (re-fetched by CMake or by the helper script).
 # We KEEP vendor/cacert.pem in tree because CMake bakes it into the binary.
