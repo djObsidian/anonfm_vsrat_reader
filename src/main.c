@@ -92,7 +92,7 @@ static int afm_parse_args(int argc, char **argv, struct afm_opts *o)
     int i;
     o->watch        = 1;     /* default: poll mode (so a Windows double-click
                               *          on the .exe gives a live feed) */
-    o->interval_sec = 5;
+    o->interval_sec = 15;
     o->limit        = -1;
     o->dj_filter    = NULL;
     o->colors_path  = NULL;
