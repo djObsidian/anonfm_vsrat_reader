@@ -92,7 +92,7 @@ static int afm_parse_args(int argc, char **argv, struct afm_opts *o)
     int i;
     o->watch        = 1;     /* default: poll mode (so a Windows double-click
                               *          on the .exe gives a live feed) */
-    o->interval_sec = 5;
+    o->interval_sec = 15;
     o->limit        = -1;
     o->dj_filter    = NULL;
     o->colors_path  = NULL;
@@ -207,18 +207,49 @@ static void afm_render_batch(const struct afm_entry *entries, size_t count,
         kept_n = (size_t)o->limit;
     }
 
+    char seen_key[1024];
+    size_t seen_klen;
+    int    seen_rc;
+    unsigned long seen_hash;
+    size_t seen_idx;
+
+    char seen_key_newest[1024];
+    size_t seen_klen_newest;
+    unsigned long seen_hash_newest;
+    size_t seen_idx_newest;
+
+    if (seen != NULL && kept_n > 0) {
+        seen_klen = afm_entry_key(&entries[0], seen_key, sizeof(seen_key));
+        seen_rc   = afm_seen_check(seen, seen_key, seen_klen, &seen_hash, &seen_idx);
+        if (seen_rc == 1) {
+            goto cleanup;
+        } else {
+            memcpy(seen_key_newest, seen_key, seen_klen);
+            seen_klen_newest = seen_klen;
+            seen_hash_newest = seen_hash;
+            seen_idx_newest  = seen_idx;
+            for (i = 1; i < kept_n; ++i) {
+                seen_klen = afm_entry_key(&entries[i], seen_key, sizeof(seen_key));
+                seen_rc   = afm_seen_check(seen, seen_key, seen_klen, &seen_hash, &seen_idx);
+                if (seen_rc == 1) {
+                    kept_n = i;
+                    break;
+                }
+            }
+        }
+    }
+
     /* Print in reverse so the newest end up at the bottom. */
     for (i = kept_n; i > 0; --i) {
         size_t idx = kept[i - 1];
-        if (seen != NULL) {
-            char   key[1024];
-            size_t klen = afm_entry_key(&entries[idx], key, sizeof(key));
-            int    rc   = afm_seen_check_and_add(seen, key, klen);
-            if (rc == 1) continue;  /* already shown */
-        }
         afm_render_entry(&entries[idx], print_separators && started);
         started = 1;
+        if (idx == 0 && seen != NULL) {
+          afm_seen__add(seen, seen_key_newest, seen_klen_newest, seen_hash_newest, seen_idx_newest);
+        }
     }
+
+ cleanup:
     free(kept);
 }
 
@@ -314,7 +345,7 @@ int main(int argc, char **argv)
     if (opts.socks5 != NULL) afm_http_set_socks5(opts.socks5);
 
     if (opts.watch) {
-        seen = afm_seen_new();
+        seen = afm_seen_new(1, 0);
         if (seen == NULL) {
             fprintf(stderr, "out of memory\n");
             afm_http_global_cleanup();

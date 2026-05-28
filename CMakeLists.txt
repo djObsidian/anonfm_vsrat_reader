@@ -3,17 +3,18 @@ project(anonfm_vsrat_reader C)
 
 # Hardcore ANSI C as the user requested. Apply only to OUR sources, not deps.
 set(AFM_C_FLAGS_STRICT
-    -std=c89
-    -pedantic
     -Wall
     -D_POSIX_C_SOURCE=200809L
 )
 
 if (MSVC)
-	# list(APPEND AFM_C_FLAGS_STRICT -W4)
-	list(APPEND AFM_C_FLAGS_STRICT /wd4711 /wd4710)
+    # list(APPEND AFM_C_FLAGS_STRICT -W4)
+    list(APPEND AFM_C_FLAGS_STRICT /std:c89)
+    list(APPEND AFM_C_FLAGS_STRICT /wd4710 /wd4711 /wd5045)
 else()
     list(APPEND AFM_C_FLAGS_STRICT
+        -std=c89
+        -pedantic
         -Wextra
         -Wno-long-long
         -Wno-overlength-strings
